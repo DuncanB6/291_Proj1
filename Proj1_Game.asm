@@ -12,8 +12,8 @@ TIMER2_RATE   EQU 125     ; 1000Hz, timer tick of 1ms
 TIMER2_RELOAD EQU ((65536-(CLK/TIMER2_RATE)))
 
 BOOT_BUTTON   equ P4.5
-PLAYER_1	  equ P0.1
-PLAYER_2      equ P0.2
+PLAYER_1	  equ P0.0
+PLAYER_2      equ P0.1 
 SOUND_OUT	  equ P1.1
 
 ; Reset vector
@@ -219,7 +219,7 @@ loop:
 		jb PLAYER_1, check_button_1  
 		Wait_Milli_Seconds(#50)	
 		jb PLAYER_1, check_button_1 
-		jnb PLAYER_1, $	
+		jnb PLAYER_1, $	 
 		ljmp Deduct_player_1
 		
 		; Check for player one's button.
