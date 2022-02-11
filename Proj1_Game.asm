@@ -14,6 +14,8 @@ TIMER2_RATE   EQU 125     ; 1000Hz, timer tick of 1ms
 TIMER2_RELOAD EQU ((65536-(CLK/TIMER2_RATE)))
 
 BOOT_BUTTON   equ P4.5
+PLAYER_ONE    equ P0.1
+PLAYER_TWO    equ P0.2
 
 ; Reset vector
 org 0x0000
