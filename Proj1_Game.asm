@@ -14,8 +14,8 @@ TIMER2_RATE   EQU 125     ; 1000Hz, timer tick of 1ms
 TIMER2_RELOAD EQU ((65536-(CLK/TIMER2_RATE)))
 
 BOOT_BUTTON   equ P4.5
-PLAYER_ONE    equ P0.1
-PLAYER_TWO    equ P0.2
+PLAYER_1    equ P0.1
+PLAYER_2    equ P0.2
 
 ; Reset vector
 org 0x0000
@@ -204,18 +204,18 @@ loop:
 
 	; Check for a button press on tone 0.
 	; Check for player one's button.
-		jb BUTTON_1, check_button_2  
+		jb PLAYER_1, check_button_2  
 		Wait_Milli_Seconds(#50)	
-		jb BUTTON_1, check_button_2 
-		jnb BUTTON_1, $	
+		jb PLAYER_1, check_button_2 
+		jnb PLAYER_1, $	
 		ljmp Deduct_player_1
 		
 		; Check for player one's button.
 	check_button_2:
-		jb BUTTON_2, loop 
+		jb PLAYER_2, loop 
 		Wait_Milli_Seconds(#50)	
-		jb BUTTON_2, loop  
-		jnb BUTTON_2, $	
+		jb PLAYER_2, loop  
+		jnb PLAYER_2, $	
 		ljmp Deduct_player_2
 		
 		ret
@@ -243,18 +243,18 @@ check_score_two:
 	
 	tone_1:
 		; Check for player one's button.
-		jb BUTTON_1, check_button_2  
+		jb PLAYER_1, check_button_2  
 		Wait_Milli_Seconds(#50)	
-		jb BUTTON_1, check_button_2 
-		jnb BUTTON_1, $	
+		jb PLAYER_1, check_button_2 
+		jnb PLAYER_1, $	
 		ljmp Score_player_1
 		
 		; Check for player one's button.
 	check_button_2:
-		jb BUTTON_2, loop 
+		jb PLAYER_2, loop 
 		Wait_Milli_Seconds(#50)	
-		jb BUTTON_2, loop  
-		jnb BUTTON_2, $	
+		jb PLAYER_2, loop  
+		jnb PLAYER_2, $	
 		ljmp Score_player_2
 		
 		ret
