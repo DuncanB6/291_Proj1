@@ -3,8 +3,6 @@
 
 $NOLIST
 $MODLP51
-$include(LCD_4bit.inc)
-$include(math32.inc)
 $LIST
 
 CLK           EQU 22118400 
@@ -14,8 +12,9 @@ TIMER2_RATE   EQU 125     ; 1000Hz, timer tick of 1ms
 TIMER2_RELOAD EQU ((65536-(CLK/TIMER2_RATE)))
 
 BOOT_BUTTON   equ P4.5
-PLAYER_1    equ P0.1
-PLAYER_2    equ P0.2
+PLAYER_1	  equ P0.1
+PLAYER_2      equ P0.2
+SOUND_OUT	  equ P1.1
 
 ; Reset vector
 org 0x0000
@@ -35,9 +34,14 @@ Count1ms: ds 2 ; Used to determine when half second has passed
 Score_1:  ds 1 ; Score of player 1
 Score_2:  ds 1 ; Score of player 2
 tone:	  ds 1 ; Tone indicator
+x:		  ds 4 ; Math var 1
+y: 		  ds 4 ; Math var 2
+time_counter: ds 1 ; Counts time
+bcd:	  ds 5
 
 bseg
 four_seconds_flag: dbit 1
+mf: 			   dbit 1
 
 cseg
 LCD_RS equ P3.2
@@ -47,9 +51,14 @@ LCD_D5 equ P3.5
 LCD_D6 equ P3.6
 LCD_D7 equ P3.7
 
+$NOLIST
+$include(LCD_4bit.inc)
+$include(math32.inc)
+$LIST
+
 ;              1234567890123456 
-Player_1:  db 'Player One: x', 0
-Player_2:  db 'Player Two: x', 0
+Player_1_init:  db 'Player One: x', 0
+Player_2_init:  db 'Player Two: x', 0
 
 Timer0_Init:
 	mov a, TMOD
@@ -109,22 +118,17 @@ Inc_Done:
 	cjne a, #high(500), Timer2_ISR_done
 	
 	; 500 milliseconds have passed.  Set a flag so the main program knows
-	setb half_seconds_flag ; Let the main program know half second had passed
+	setb four_seconds_flag ; Let the main program know half second had passed
 	cpl TR0 ; Enable/disable timer/counter 0. This line creates a beep-silence-beep-silence sound.
 	; Reset to zero the milli-seconds counter, it is a 16-bit variable
 	clr a
 	mov Count1ms+0, a
 	mov Count1ms+1, a
 	; Increment the BCD counter
-	mov a, BCD_counter
-	jnb UPDOWN, Timer2_ISR_decrement
+	mov a, time_counter
 	add a, #0x01
-	sjmp Timer2_ISR_da
-Timer2_ISR_decrement:
-	add a, #0x99 ; Adding the 10-complement of -1 is like subtracting 1.
-Timer2_ISR_da:
 	da a ; Decimal adjust instruction.  Check datasheet for more details!
-	mov BCD_counter, a
+	mov time_counter, a
 	
 Timer2_ISR_done:
 	pop psw
@@ -164,10 +168,10 @@ main:
     setb EA  
     lcall LCD_4BIT
 	Set_Cursor(1, 1)
-    Send_Constant_String(#Player_1)
+    Send_Constant_String(#Player_1_init)
     Set_Cursor(2, 1)
-    Send_Constant_String(#Player_2)
-    setb half_seconds_flag
+    Send_Constant_String(#Player_2_init)
+    setb four_seconds_flag
 	mov Score_1, #0x00
 	mov Score_2, #0x00
 	
@@ -175,8 +179,8 @@ main:
 	setb TR2
 	jb	P4.5, $
 	mov Seed+0, TH2
-	mov Seed+1, 0x03
-	mov Seed+2, 0x33
+	mov Seed+1, #0x03
+	mov Seed+2, #0x33
 	mov Seed+3, TL2
 	clr TR2
 	
@@ -191,32 +195,40 @@ tone_loop:
 
 	; Play frequency
 	
+	sjmp loop
+
+tone_1_relay:
+	ljmp tone_1
+
 	
 loop:
 	; Initialize timer, count to 4.
 	setb TR2
 	
 	; If 4 seconds have passed, loop.
-	CJNE four_seconds_flag, #0x00, tone_loop
+	mov a, four_seconds_flag
+	CJNE a, #0x00, tone_loop
 	
 	; Check for button press/555 frequency change
-	CJNE tone, 0x00, tone_1
+	mov a, tone
+	CJNE a, #0x00, tone_1_relay
+	
 
 	; Check for a button press on tone 0.
 	; Check for player one's button.
-		jb PLAYER_1, check_button_2  
+		jb PLAYER_1, check_button_1  
 		Wait_Milli_Seconds(#50)	
-		jb PLAYER_1, check_button_2 
+		jb PLAYER_1, check_button_1 
 		jnb PLAYER_1, $	
 		ljmp Deduct_player_1
 		
 		; Check for player one's button.
-	check_button_2:
-		jb PLAYER_2, loop 
+	check_button_1:
+		jb PLAYER_1, loop 
 		Wait_Milli_Seconds(#50)	
-		jb PLAYER_2, loop  
-		jnb PLAYER_2, $	
-		ljmp Deduct_player_2
+		jb PLAYER_1, loop  
+		jnb PLAYER_1, $	
+		ljmp Deduct_player_1
 		
 		ret
 		
@@ -227,15 +239,17 @@ loop:
 	Display_BCD(Score_2)
 	
 	; Check to see if a player has won, restart game if so.
-	CJNE Score_1, #0x05, check_score_two
+	mov a, Score_1
+	CJNE a, #0x05, check_score_two
 	Set_Cursor(1, 13)
-	Write_Data(#0x33)
+	WriteData(#0x33)
 	mov Score_1, #0x00
 	mov Score_2, #0x00
 check_score_two:
-	CJNE Score_2, #0x05, loop
+	mov a, Score_2
+	CJNE a, #0x05, loop
 	Set_Cursor(2, 13)
-	Write_Data(#0x33)
+	WriteData(#0x33)
 	mov Score_1, #0x00
 	mov Score_2, #0x00
 	
@@ -249,11 +263,14 @@ check_score_two:
 		jnb PLAYER_1, $	
 		ljmp Score_player_1
 		
+	loop_relay:
+		ljmp loop
+		
 		; Check for player one's button.
 	check_button_2:
-		jb PLAYER_2, loop 
+		jb PLAYER_2, loop_relay 
 		Wait_Milli_Seconds(#50)	
-		jb PLAYER_2, loop  
+		jb PLAYER_2, loop_relay
 		jnb PLAYER_2, $	
 		ljmp Score_player_2
 		
