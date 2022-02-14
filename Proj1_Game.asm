@@ -14,8 +14,8 @@ TIMER2_RATE   EQU 1000     ; 1000Hz, timer tick of 1ms
 TIMER2_RELOAD EQU ((65536-(CLK/TIMER2_RATE)))
 
 BOOT_BUTTON   equ P4.5
-PLAYER_1	  equ P0.1
-PLAYER_2      equ P0.2
+PLAYER_0	  equ P0.1
+PLAYER_1      equ P0.2
 SOUND_OUT	  equ P1.1
 
 ; Reset vector
@@ -33,8 +33,8 @@ org 0x002B
 dseg at 0x30
 Seed:	  ds 4 ; Random seed 
 Count1ms: ds 2 ; Used to determine when half second has passed
-Score_1:  ds 1 ; Score of player 1
-Score_2:  ds 1 ; Score of player 2
+Score_0:  ds 1 ; Score of player 1
+Score_1:  ds 1 ; Score of player 2
 x:		  ds 4 ; Math var 1
 y: 		  ds 4 ; Math var 2
 time_counter: ds 1 ; Counts time
@@ -44,6 +44,7 @@ bseg
 two_seconds_flag: dbit 1
 mf: 	dbit 1
 tone:	dbit 1
+player_flag:	  dbit 1
 
 cseg
 LCD_RS equ P3.2
@@ -58,7 +59,7 @@ $include(LCD_4bit.inc)
 $include(math32.inc)
 $LIST
 
-;              1234567890123456 
+;                   1234567890123456 
 Player_1_init:  db 'Player One: x', 0
 Player_2_init:  db 'Player Two: x', 0
 
@@ -175,8 +176,8 @@ main:
 
     clr two_seconds_flag
     mov a, #0x00
+	mov Score_0, a
 	mov Score_1, a
-	mov Score_2, a
 	mov Seed, a
 	clr tone
 	
@@ -192,150 +193,144 @@ main:
 ; Picks randomly between the two frequencies, starts playing that tone.	
 tone_loop: 
 
-	Set_Cursor(1, 1)
-	WriteData(#0x33)
+	; Debug
+	; Set_Cursor(1, 1)
+	; WriteData(#0x33)
 	
+	; A moment of silence between rounds.
 	clr TR0
 	lcall Wait1s
 
+	; Resets timer two, which is measuring the two second periods of sound.
 	clr TR2
 	clr a
 	clr two_seconds_flag
 	mov Count1ms+0, a
 	mov Count1ms+1, a
 	
+	; Starts timer two.
 	setb TR2
 
-	; Choose frequency randomly
+	; Chooses frequency randomly
 	lcall Random
 	mov a, Seed+1
 	mov c, acc.3
 	mov tone, c
 
+	; Jump to a seperate set of reload instructions for one tone.
 	jnb tone, tone_reload
 	
+	; Sets frequency using reload instructions.
 	mov TH0, #high(TIMER0_0_RELOAD)
 	mov TL0, #low(TIMER0_0_RELOAD)
-	; Set autoreload value
 	mov RH0, #high(TIMER0_0_RELOAD)
 	mov RL0, #low(TIMER0_0_RELOAD)
 	
+	; Turns on tone, moves to main loop.
 	setb TR0
-	
 	ljmp loop
 	
+	; Sets frequency using reload instructions.
 tone_reload:
 	mov TH0, #high(TIMER0_1_RELOAD)
 	mov TL0, #low(TIMER0_1_RELOAD)
-	; Set autoreload value
 	mov RH0, #high(TIMER0_1_RELOAD)
 	mov RL0, #low(TIMER0_1_RELOAD)
 	
+	; Turns on tone, moves to main loop.
 	setb TR0
-	
 	ljmp loop
-
-tone_1_relay:
-	ljmp tone_1
-
 	
 loop:
 	
-	; If 2 seconds have passed, loop.
-	jnb two_seconds_flag, loop
-	; lcall Wait1s
-	
-	Set_Cursor(2, 1)
-	WriteData(#0x33)
-	
-	ljmp tone_loop
-	
-	; Check for button press/555 frequency change
-	mov a, tone
-	CJNE a, #0x00, tone_1_relay
-	
+	; If 2 seconds have passed, return to tone loop, which resets round.
+	jb two_seconds_flag, tone_loop
 
-	; Check for a button press on tone 0.
+	; Debug
+	; Set_Cursor(2, 1)
+	; WriteData(#0x33)
+
 	; Check for player one's button.
-		jb PLAYER_1, check_button_1  
+		jb PLAYER_0, check_button_1  
 		Wait_Milli_Seconds(#50)	
-		jb PLAYER_1, check_button_1 
-		jnb PLAYER_1, $	
-		ljmp Deduct_player_1
+		jb PLAYER_0, check_button_1
+		jnb PLAYER_0, $	
 		
-		; Check for player one's button.
+		; Set player flag to 0, move to player choice.
+		clr player_flag
+		ljmp player_choice
+		
+		; Check for player two's button.
 	check_button_1:
 		jb PLAYER_1, loop 
 		Wait_Milli_Seconds(#50)	
 		jb PLAYER_1, loop  
 		jnb PLAYER_1, $	
-		ljmp Deduct_player_1
 		
-		ret
+		; Set player flag to 1, move to player choice.
+		setb player_flag
+		ljmp player_choice
 		
-	; Update score
-	Set_Cursor(1, 13)
-	Display_BCD(Score_1)
-	Set_Cursor(2, 13)
-	Display_BCD(Score_2)
+	; If player flag is 0, move to score player 0. Otherwise, score player 1.
+	player_choice:
+			jnb player_flag, scoring_0
+			ljmp scoring_1
 	
-	; Check to see if a player has won, restart game if so.
-	mov a, Score_1
-	CJNE a, #0x05, check_score_two
-	Set_Cursor(1, 13)
-	WriteData(#0x33)
-	mov Score_1, #0x00
-	mov Score_2, #0x00
-	
-check_score_two:
-	mov a, Score_2
-	;CJNE a, #0x05, loop
-	Set_Cursor(2, 13)
-	WriteData(#0x33)
-	mov Score_1, #0x00
-	mov Score_2, #0x00
-	
-	ljmp loop
-
-	
-	tone_1:
-		; Check for player one's button.
-		jb PLAYER_1, check_button_2  
-		Wait_Milli_Seconds(#50)	
-		jb PLAYER_1, check_button_2 
-		jnb PLAYER_1, $	
-		ljmp Score_player_1
+	; Either increments or decrements the player's score based on the tone that is currently playing.
+	; If the player's score is 0, does not change their score.
+	scoring_0:
+		jnb tone, increment_0
+		mov a, score_0
+		CJNE a, #0x00, non_0_0
+		ljmp hot_end
 		
-	loop_relay:
+	non_0_0:
+		mov a, score_0
+		add a, #0x99
+		da a
+		mov score_0, a
+		ljmp hot_end
+		
+	increment_0:
+		mov a, score_0
+		add a, #0x01
+		da a
+		mov score_0, a
+		ljmp hot_end
+		
+	; Either increments or decrements the player's score based on the tone that is currently playing.
+	; If the player's score is 0, does not change their score.
+	scoring_1:
+		jnb tone, increment_1
+		mov a, score_1
+		CJNE a, #0x00, non_0_1
+		ljmp hot_end
+		
+	non_0_1:
+		mov a, score_1
+		add a, #0x99
+		da a
+		mov score_1, a
+		ljmp hot_end
+		
+	increment_1:
+		mov a, score_1
+		add a, #0x01
+		da a
+		mov score_1, a
+		ljmp hot_end
+			
+	; A button has been pressed, so the scores are updated and we move to the next round.
+	hot_end:
+		Set_Cursor(1, 13)
+		Display_BCD(score_0)
+		Set_Cursor(2, 13)
+		Display_BCD(score_1)
+		ljmp tone_loop
+	
+	; No button has been pressed, return to loop and keep checking.
+	cold_end:
 		ljmp loop
-		
-		; Check for player one's button.
-	check_button_2:
-		jb PLAYER_2, loop_relay 
-		Wait_Milli_Seconds(#50)	
-		jb PLAYER_2, loop_relay
-		jnb PLAYER_2, $	
-		ljmp Score_player_2
-		
-		ret
 	
-	Score_player_1:
-		mov a, Score_1
-		add a, #0x01
-		ljmp tone_loop
-		
-	Score_player_2:
-		mov a, Score_2
-		add a, #0x01
-		ljmp tone_loop
-		
-	Deduct_player_1:
-		mov a, Score_1
-		add a, #0x99
-		ljmp tone_loop
-		
-	Deduct_player_2:
-		mov a, Score_2
-		add a, #0x99
-		ljmp tone_loop
+	END
     
