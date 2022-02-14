@@ -6,14 +6,16 @@ $MODLP51
 $LIST
 
 CLK           EQU 22118400 
-TIMER0_RATE   EQU 4096     ; 2048Hz squarewave (peak amplitude of CEM-1203 speaker)
-TIMER0_RELOAD EQU ((65536-(CLK/TIMER0_RATE)))
+TIMER0_0_RATE   EQU 4000     ; 2048Hz squarewave (peak amplitude of CEM-1203 speaker)
+TIMER0_0_RELOAD EQU ((65536-(CLK/TIMER0_0_RATE)))
+TIMER0_1_RATE   EQU 2000     ; 2048Hz squarewave (peak amplitude of CEM-1203 speaker)
+TIMER0_1_RELOAD EQU ((65536-(CLK/TIMER0_1_RATE)))
 TIMER2_RATE   EQU 125     ; 1000Hz, timer tick of 1ms
 TIMER2_RELOAD EQU ((65536-(CLK/TIMER2_RATE)))
 
 BOOT_BUTTON   equ P4.5
-PLAYER_1	  equ P0.0
-PLAYER_2      equ P0.1 
+PLAYER_1	  equ P0.1
+PLAYER_2      equ P0.2
 SOUND_OUT	  equ P1.1
 
 ; Reset vector
@@ -41,7 +43,7 @@ bcd:	  ds 5
 
 bseg
 four_seconds_flag: dbit 1
-mf: 			   dbit 1
+mf: 	dbit 1
 
 cseg
 LCD_RS equ P3.2
@@ -65,14 +67,14 @@ Timer0_Init:
 	anl a, #0xf0 ; Clear the bits for timer 0
 	orl a, #0x01 ; Configure timer 0 as 16-timer
 	mov TMOD, a
-	mov TH0, #high(TIMER0_RELOAD)
-	mov TL0, #low(TIMER0_RELOAD)
+	mov TH0, #high(TIMER0_0_RELOAD)
+	mov TL0, #low(TIMER0_0_RELOAD)
 	; Set autoreload value
-	mov RH0, #high(TIMER0_RELOAD)
-	mov RL0, #low(TIMER0_RELOAD)
+	mov RH0, #high(TIMER0_0_RELOAD)
+	mov RL0, #low(TIMER0_0_RELOAD)
 	; Enable the timer and interrupts
     setb ET0  ; Enable timer 0 interrupt
-    setb TR0  ; Start timer 0
+    clr TR0  ; Start timer 0
 	ret
 	
 Timer0_ISR:
@@ -193,9 +195,32 @@ tone_loop:
 	mov c, acc.3
 	mov tone, c
 
-	; Play frequency
+	mov a, #0x00
+	mov a, tone
+	Set_Cursor(1, 1)
+	Display_BCD(a)
+	CJNE a, #0x00, tone_reload
 	
-	sjmp loop
+	mov TH0, #high(TIMER0_0_RELOAD)
+	mov TL0, #low(TIMER0_0_RELOAD)
+	; Set autoreload value
+	mov RH0, #high(TIMER0_0_RELOAD)
+	mov RL0, #low(TIMER0_0_RELOAD)
+	
+	setb TR0
+	
+	ljmp loop
+	
+tone_reload:
+	mov TH0, #high(TIMER0_1_RELOAD)
+	mov TL0, #low(TIMER0_1_RELOAD)
+	; Set autoreload value
+	mov RH0, #high(TIMER0_1_RELOAD)
+	mov RL0, #low(TIMER0_1_RELOAD)
+	
+	setb TR0
+	
+	ljmp loop
 
 tone_1_relay:
 	ljmp tone_1
@@ -219,7 +244,7 @@ loop:
 		jb PLAYER_1, check_button_1  
 		Wait_Milli_Seconds(#50)	
 		jb PLAYER_1, check_button_1 
-		jnb PLAYER_1, $	 
+		jnb PLAYER_1, $	
 		ljmp Deduct_player_1
 		
 		; Check for player one's button.
