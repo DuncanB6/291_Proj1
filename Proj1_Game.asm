@@ -328,9 +328,5 @@ loop:
 		Display_BCD(score_1)
 		ljmp tone_loop
 	
-	; No button has been pressed, return to loop and keep checking.
-	cold_end:
-		ljmp loop
-	
 	END
     
