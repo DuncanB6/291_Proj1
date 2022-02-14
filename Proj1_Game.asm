@@ -6,11 +6,11 @@ $MODLP51
 $LIST
 
 CLK           EQU 22118400 
-TIMER0_0_RATE   EQU 4000     ; 2048Hz squarewave (peak amplitude of CEM-1203 speaker)
+TIMER0_0_RATE   EQU 2200     ; 2048Hz squarewave (peak amplitude of CEM-1203 speaker)
 TIMER0_0_RELOAD EQU ((65536-(CLK/TIMER0_0_RATE)))
 TIMER0_1_RATE   EQU 2000     ; 2048Hz squarewave (peak amplitude of CEM-1203 speaker)
 TIMER0_1_RELOAD EQU ((65536-(CLK/TIMER0_1_RATE)))
-TIMER2_RATE   EQU 125     ; 1000Hz, timer tick of 1ms
+TIMER2_RATE   EQU 1000     ; 1000Hz, timer tick of 1ms
 TIMER2_RELOAD EQU ((65536-(CLK/TIMER2_RATE)))
 
 BOOT_BUTTON   equ P4.5
@@ -35,15 +35,15 @@ Seed:	  ds 4 ; Random seed
 Count1ms: ds 2 ; Used to determine when half second has passed
 Score_1:  ds 1 ; Score of player 1
 Score_2:  ds 1 ; Score of player 2
-tone:	  ds 1 ; Tone indicator
 x:		  ds 4 ; Math var 1
 y: 		  ds 4 ; Math var 2
 time_counter: ds 1 ; Counts time
 bcd:	  ds 5
 
 bseg
-four_seconds_flag: dbit 1
+two_seconds_flag: dbit 1
 mf: 	dbit 1
+tone:	dbit 1
 
 cseg
 LCD_RS equ P3.2
@@ -74,7 +74,7 @@ Timer0_Init:
 	mov RL0, #low(TIMER0_0_RELOAD)
 	; Enable the timer and interrupts
     setb ET0  ; Enable timer 0 interrupt
-    clr TR0  ; Start timer 0
+    clr TR0  ; Stop timer 0
 	ret
 	
 Timer0_ISR:
@@ -115,13 +115,12 @@ Timer2_Init:
 Inc_Done:
 	; Check if half second has passed
 	mov a, Count1ms+0
-	cjne a, #low(500), Timer2_ISR_done ; Warning: this instruction changes the carry flag!
+	cjne a, #low(2000), Timer2_ISR_done ; Warning: this instruction changes the carry flag!
 	mov a, Count1ms+1
-	cjne a, #high(500), Timer2_ISR_done
+	cjne a, #high(2000), Timer2_ISR_done
 	
 	; 500 milliseconds have passed.  Set a flag so the main program knows
-	setb four_seconds_flag ; Let the main program know half second had passed
-	cpl TR0 ; Enable/disable timer/counter 0. This line creates a beep-silence-beep-silence sound.
+	setb two_seconds_flag ; Let the main program know two seconds have passed
 	; Reset to zero the milli-seconds counter, it is a 16-bit variable
 	clr a
 	mov Count1ms+0, a
@@ -173,12 +172,13 @@ main:
     Send_Constant_String(#Player_1_init)
     Set_Cursor(2, 1)
     Send_Constant_String(#Player_2_init)
-    setb four_seconds_flag
+
+    clr two_seconds_flag
     mov a, #0x00
 	mov Score_1, a
 	mov Score_2, a
 	mov Seed, a
-	mov tone, a
+	clr tone
 	
 	; Fills seed with a random number based on time of button press.
 	setb TR2
@@ -188,9 +188,23 @@ main:
 	mov Seed+2, #0x33
 	mov Seed+3, TL2
 	clr TR2
-	
+
+; Picks randomly between the two frequencies, starts playing that tone.	
 tone_loop: 
+
+	Set_Cursor(1, 1)
+	WriteData(#0x33)
+	
+	clr TR0
+	lcall Wait1s
+
 	clr TR2
+	clr a
+	clr two_seconds_flag
+	mov Count1ms+0, a
+	mov Count1ms+1, a
+	
+	setb TR2
 
 	; Choose frequency randomly
 	lcall Random
@@ -198,12 +212,7 @@ tone_loop:
 	mov c, acc.3
 	mov tone, c
 
-	lcall Wait1s
-
-	mov a, tone
-	Set_Cursor(1, 1)
-	Display_BCD(tone)
-	CJNE a, #0x00, tone_reload
+	jnb tone, tone_reload
 	
 	mov TH0, #high(TIMER0_0_RELOAD)
 	mov TL0, #low(TIMER0_0_RELOAD)
@@ -213,7 +222,7 @@ tone_loop:
 	
 	setb TR0
 	
-	ljmp tone_loop
+	ljmp loop
 	
 tone_reload:
 	mov TH0, #high(TIMER0_1_RELOAD)
@@ -224,19 +233,22 @@ tone_reload:
 	
 	setb TR0
 	
-	ljmp tone_loop
+	ljmp loop
 
 tone_1_relay:
 	ljmp tone_1
 
 	
 loop:
-	; Initialize timer, count to 4.
-	setb TR2
 	
-	; If 4 seconds have passed, loop.
-	mov a, four_seconds_flag
-	CJNE a, #0x00, tone_loop
+	; If 2 seconds have passed, loop.
+	jnb two_seconds_flag, loop
+	; lcall Wait1s
+	
+	Set_Cursor(2, 1)
+	WriteData(#0x33)
+	
+	ljmp tone_loop
 	
 	; Check for button press/555 frequency change
 	mov a, tone
@@ -274,15 +286,17 @@ loop:
 	WriteData(#0x33)
 	mov Score_1, #0x00
 	mov Score_2, #0x00
+	
 check_score_two:
 	mov a, Score_2
-	CJNE a, #0x05, loop
+	;CJNE a, #0x05, loop
 	Set_Cursor(2, 13)
 	WriteData(#0x33)
 	mov Score_1, #0x00
 	mov Score_2, #0x00
 	
 	ljmp loop
+
 	
 	tone_1:
 		; Check for player one's button.
