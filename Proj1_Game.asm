@@ -174,8 +174,11 @@ main:
     Set_Cursor(2, 1)
     Send_Constant_String(#Player_2_init)
     setb four_seconds_flag
-	mov Score_1, #0x00
-	mov Score_2, #0x00
+    mov a, #0x00
+	mov Score_1, a
+	mov Score_2, a
+	mov Seed, a
+	mov tone, a
 	
 	; Fills seed with a random number based on time of button press.
 	setb TR2
@@ -195,10 +198,11 @@ tone_loop:
 	mov c, acc.3
 	mov tone, c
 
-	mov a, #0x00
+	lcall Wait1s
+
 	mov a, tone
 	Set_Cursor(1, 1)
-	Display_BCD(a)
+	Display_BCD(tone)
 	CJNE a, #0x00, tone_reload
 	
 	mov TH0, #high(TIMER0_0_RELOAD)
@@ -209,7 +213,7 @@ tone_loop:
 	
 	setb TR0
 	
-	ljmp loop
+	ljmp tone_loop
 	
 tone_reload:
 	mov TH0, #high(TIMER0_1_RELOAD)
@@ -220,7 +224,7 @@ tone_reload:
 	
 	setb TR0
 	
-	ljmp loop
+	ljmp tone_loop
 
 tone_1_relay:
 	ljmp tone_1
