@@ -39,6 +39,9 @@ x:		  ds 4 ; Math var 1
 y: 		  ds 4 ; Math var 2
 time_counter: ds 1 ; Counts time
 bcd:	  ds 5
+pulse_count:  ds 4
+Period_0: ds 2
+Period_1: ds 2
 
 bseg
 two_seconds_flag: dbit 1
@@ -83,6 +86,14 @@ Timer0_ISR:
 	cpl SOUND_OUT ; Connect speaker to P1.1!
 	reti
 
+;Initializes timer/counter 2 as a 16-bit counter
+Timer1_Init:
+	mov TCON, #0b_0000_0000 ; Stop timer/counter.  Set as counter (clock input is pin T2).
+	; Set the reload value on overflow to zero (just in case is not zero)
+	mov TH1, #0
+	mov TL1, #0
+    ret
+
 Timer2_Init:
 	mov T2CON, #0 ; Stop timer/counter.  Autoreload mode.
 	mov TH2, #high(TIMER2_RELOAD)
@@ -114,23 +125,18 @@ Timer2_Init:
 	inc Count1ms+1
 
 Inc_Done:
-	; Check if half second has passed
+	; Check if two seconds has passed
 	mov a, Count1ms+0
 	cjne a, #low(2000), Timer2_ISR_done ; Warning: this instruction changes the carry flag!
 	mov a, Count1ms+1
 	cjne a, #high(2000), Timer2_ISR_done
 	
-	; 500 milliseconds have passed.  Set a flag so the main program knows
+	; 2000 milliseconds have passed.  Set a flag so the main program knows
 	setb two_seconds_flag ; Let the main program know two seconds have passed
 	; Reset to zero the milli-seconds counter, it is a 16-bit variable
 	clr a
 	mov Count1ms+0, a
 	mov Count1ms+1, a
-	; Increment the BCD counter
-	mov a, time_counter
-	add a, #0x01
-	da a ; Decimal adjust instruction.  Check datasheet for more details!
-	mov time_counter, a
 	
 Timer2_ISR_done:
 	pop psw
@@ -164,11 +170,15 @@ Random:
 main:
 	mov SP, #0x7F
     lcall Timer0_Init
+    lcall Timer1_Init
     lcall Timer2_Init
+    setb P2.0
+    setb P2.1
     mov P0M0, #0
     mov P0M1, #0
     setb EA  
     lcall LCD_4BIT
+    
 	Set_Cursor(1, 1)
     Send_Constant_String(#Player_1_init)
     Set_Cursor(2, 1)
@@ -179,7 +189,10 @@ main:
 	mov Score_0, a
 	mov Score_1, a
 	mov Seed, a
+	mov x, a
+	mov y, a
 	clr tone
+	clr mf
 	
 	; Fills seed with a random number based on time of button press.
 	setb TR2
@@ -244,6 +257,7 @@ tone_reload:
 loop:
 	
 	; If 2 seconds have passed, return to tone loop, which resets round.
+
 	jb two_seconds_flag, tone_loop
 
 	; Debug
@@ -251,25 +265,70 @@ loop:
 	; WriteData(#0x33)
 
 	; Check for player one's button.
-		jb PLAYER_0, check_button_1  
-		Wait_Milli_Seconds(#50)	
-		jb PLAYER_0, check_button_1
-		jnb PLAYER_0, $	
+	; Measure the period applied to pin P2.0
+    clr TR1 ; Stop counter 2
+    mov TL1, #0
+    mov TH1, #0
+    jb P2.0, $
+    jnb P2.0, $
+    setb TR1 ; Start counter 0
+    jb P2.0, $
+    jnb P2.0, $
+    clr TR1 ; Stop counter 2, TH1-TL1 has the period
+    ; save the period of P2.0 for later use
+    mov Period_0+0, TL1
+    mov Period_0+1, TH1
+    
+    ; Convert the result to BCD and display on LCD
+	Set_Cursor(1, 1)
+	lcall hex2bcd2_2
+    lcall DisplayBCD_LCD
+    
+    mov x+0, TL1
+    mov x+1, TH1
+    mov x+2, #0x00
+    mov x+3, #0x00
+    load_y(6000)
+    lcall x_lt_y
+    jb mf, clear_0
+    clr player_flag
+    ljmp player_choice
+    
+    clear_0:
 		
-		; Set player flag to 0, move to player choice.
-		clr player_flag
-		ljmp player_choice
-		
-		; Check for player two's button.
-	check_button_1:
-		jb PLAYER_1, loop 
-		Wait_Milli_Seconds(#50)	
-		jb PLAYER_1, loop  
-		jnb PLAYER_1, $	
-		
-		; Set player flag to 1, move to player choice.
-		setb player_flag
-		ljmp player_choice
+	; Check for player two's button.
+ 	; Measure the period applied to pin P2.1
+    clr TR1 ; Stop counter 2
+    mov TL1, #0
+    mov TH1, #0
+    jb P2.1, $
+    jnb P2.1, $
+    setb TR1 ; Start counter 0
+    jb P2.1, $
+    jnb P2.1, $
+    clr TR1 ; Stop counter 2, TH2-TL2 has the period
+    ; save the period of P2.1 for later use
+    mov Period_1+0, TL1
+    mov Period_1+1, TH1
+    
+   	; Convert the result to BCD and display on LCD
+	Set_Cursor(2, 1)
+	lcall hex2bcd2_2
+    lcall DisplayBCD_LCD
+    
+    mov x+0, TL1
+    mov x+1, TH1
+    mov x+2, #0x00
+    mov x+3, #0x00
+    load_y(5000)
+    lcall x_lt_y
+    jb mf, clear_1
+    setb player_flag
+    ljmp player_choice
+    
+    clear_1:
+    
+    ljmp loop
 		
 	; If player flag is 0, move to score player 0. Otherwise, score player 1.
 	player_choice:
@@ -327,6 +386,78 @@ loop:
 		Set_Cursor(2, 13)
 		Display_BCD(score_1)
 		ljmp tone_loop
+		
+		
+;Converts the hex number in TH2-TL2 to BCD in R2-R1-R0
+hex2bcd2_2:
+	clr a
+    mov R0, #0  ;Set BCD result to 00000000 
+    mov R1, #0
+    mov R2, #0
+    mov R3, #16 ;Loop counter.
+
+hex2bcd_loop:
+    mov a, TL1 ;Shift TH0-TL0 left through carry
+    rlc a
+    mov TL1, a
+    
+    mov a, TH1
+    rlc a
+    mov TH1, a
+      
+	; Perform bcd + bcd + carry
+	; using BCD numbers
+	mov a, R0
+	addc a, R0
+	da a
+	mov R0, a
+	
+	mov a, R1
+	addc a, R1
+	da a
+	mov R1, a
+	
+	mov a, R2
+	addc a, R2
+	da a
+	mov R2, a
+	
+	djnz R3, hex2bcd_loop
+	ret
+
+; Dumps the 5-digit packed BCD number in R2-R1-R0 into the LCD
+DisplayBCD_LCD:
+	; 5th digit:
+    mov a, R2
+    anl a, #0FH
+    orl a, #'0' ; convert to ASCII
+	lcall ?WriteData
+	; 4th digit:
+    mov a, R1
+    swap a
+    anl a, #0FH
+    orl a, #'0' ; convert to ASCII
+	lcall ?WriteData
+	; 3rd digit:
+    mov a, R1
+    anl a, #0FH
+    orl a, #'0' ; convert to ASCII
+	lcall ?WriteData
+	; 2nd digit:
+    mov a, R0
+    swap a
+    anl a, #0FH
+    orl a, #'0' ; convert to ASCII
+	lcall ?WriteData
+	; 1st digit:
+    mov a, R0
+    anl a, #0FH
+    orl a, #'0' ; convert to ASCII
+	lcall ?WriteData
+    
+    ret
 	
 	END
+    
+    
     
