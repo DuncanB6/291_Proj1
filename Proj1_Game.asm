@@ -1,5 +1,9 @@
 
-
+; Duncan, Ali, Amrit, 2022/02/18
+; Purpose: Game
+; Function: The games starts when you push a button. It playes a random tone. If you slap the capacitor on one tone
+; it increments the score. If you slap on the second tone, it decrements the score, stopping at 0.
+; If a player gets 5 points, the game displays "Wins" and resets.
 
 $NOLIST
 $MODLP51
