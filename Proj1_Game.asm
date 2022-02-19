@@ -31,22 +31,19 @@ org 0x002B
 	ljmp Timer2_ISR
 
 dseg at 0x30
-Seed:	  ds 4 ; Random seed 
-Count1ms: ds 2 ; Used to determine when half second has passed
-Score_0:  ds 1 ; Score of player 1
-Score_1:  ds 1 ; Score of player 2
-x:		  ds 4 ; Math var 1
-y: 		  ds 4 ; Math var 2
-time_counter: ds 1 ; Counts time
-bcd:	  ds 5
-pulse_count:  ds 4
-Period_0: ds 2
-Period_1: ds 2
+Seed:	  		ds 4 ; Random seed 
+Count1ms: 		ds 2 ; Used to determine when half second has passed
+Score_0:  		ds 1 ; Score of player 1
+Score_1:  		ds 1 ; Score of player 2
+x:		  		ds 4 ; Math var 1
+y: 		  		ds 4 ; Math var 2
+time_counter:   ds 1 ; Counts time
+bcd:	  		ds 5
 
 bseg
 two_seconds_flag: dbit 1
-mf: 	dbit 1
-tone:	dbit 1
+mf: 			  dbit 1
+tone:			  dbit 1
 player_flag:	  dbit 1
 
 cseg
@@ -63,8 +60,9 @@ $include(math32.inc)
 $LIST
 
 ;                   1234567890123456 
-Player_1_init:  db 'Player One: x', 0
-Player_2_init:  db 'Player Two: x', 0
+Player_1_init:  db 'Player One: 00', 0
+Player_2_init:  db 'Player Two: 00', 0
+Win:			db 'Wins', 0
 
 Timer0_Init:
 	mov a, TMOD
@@ -127,9 +125,9 @@ Timer2_Init:
 Inc_Done:
 	; Check if two seconds has passed
 	mov a, Count1ms+0
-	cjne a, #low(2000), Timer2_ISR_done ; Warning: this instruction changes the carry flag!
+	cjne a, #low(1000), Timer2_ISR_done ; Warning: this instruction changes the carry flag!
 	mov a, Count1ms+1
-	cjne a, #high(2000), Timer2_ISR_done
+	cjne a, #high(1000 ), Timer2_ISR_done
 	
 	; 2000 milliseconds have passed.  Set a flag so the main program knows
 	setb two_seconds_flag ; Let the main program know two seconds have passed
@@ -166,7 +164,7 @@ Random:
 	mov Seed+2, x+2
 	mov Seed+3, x+3
 	ret
-    
+
 main:
 	mov SP, #0x7F
     lcall Timer0_Init
@@ -262,7 +260,7 @@ loop:
 
 	; Debug
 	; Set_Cursor(2, 1)
-	; WriteData(#0x33)
+	; WriteData(#0x33)	
 
 	; Check for player one's button.
 	; Measure the period applied to pin P2.0
@@ -276,21 +274,16 @@ loop:
     jnb P2.0, $
     clr TR1 ; Stop counter 2, TH1-TL1 has the period
     ; save the period of P2.0 for later use
-    mov Period_0+0, TL1
-    mov Period_0+1, TH1
-    
-    ; Convert the result to BCD and display on LCD
-	Set_Cursor(1, 1)
-	lcall hex2bcd2_2
-    lcall DisplayBCD_LCD
     
     mov x+0, TL1
     mov x+1, TH1
     mov x+2, #0x00
     mov x+3, #0x00
+    
+    clr mf
     load_y(6000)
     lcall x_lt_y
-    jb mf, clear_0
+    jnb mf, clear_0
     clr player_flag
     ljmp player_choice
     
@@ -308,21 +301,16 @@ loop:
     jnb P2.1, $
     clr TR1 ; Stop counter 2, TH2-TL2 has the period
     ; save the period of P2.1 for later use
-    mov Period_1+0, TL1
-    mov Period_1+1, TH1
-    
-   	; Convert the result to BCD and display on LCD
-	Set_Cursor(2, 1)
-	lcall hex2bcd2_2
-    lcall DisplayBCD_LCD
     
     mov x+0, TL1
     mov x+1, TH1
     mov x+2, #0x00
     mov x+3, #0x00
-    load_y(5000)
+    
+    clr mf
+    load_y(4000)
     lcall x_lt_y
-    jb mf, clear_1
+    jnb mf, clear_1
     setb player_flag
     ljmp player_choice
     
@@ -381,82 +369,37 @@ loop:
 			
 	; A button has been pressed, so the scores are updated and we move to the next round.
 	hot_end:
+		clr mf
+	
 		Set_Cursor(1, 13)
 		Display_BCD(score_0)
 		Set_Cursor(2, 13)
 		Display_BCD(score_1)
+		
+		mov a, score_0
+		CJNE a, #0x05, nowin_0
+		
+		Set_Cursor(1, 13)
+		Send_Constant_String(#Win)
+		lcall Wait1s
+		
+		ljmp main
+		
+		nowin_0:
+		
+		mov a, score_1
+		CJNE a, #0x05, nowin_1
+		
+		Set_Cursor(2, 13)
+		Send_Constant_String(#Win)
+		lcall Wait1s
+		
+		ljmp main
+		
+		nowin_1:
+		
 		ljmp tone_loop
 		
-		
-;Converts the hex number in TH2-TL2 to BCD in R2-R1-R0
-hex2bcd2_2:
-	clr a
-    mov R0, #0  ;Set BCD result to 00000000 
-    mov R1, #0
-    mov R2, #0
-    mov R3, #16 ;Loop counter.
-
-hex2bcd_loop:
-    mov a, TL1 ;Shift TH0-TL0 left through carry
-    rlc a
-    mov TL1, a
-    
-    mov a, TH1
-    rlc a
-    mov TH1, a
-      
-	; Perform bcd + bcd + carry
-	; using BCD numbers
-	mov a, R0
-	addc a, R0
-	da a
-	mov R0, a
-	
-	mov a, R1
-	addc a, R1
-	da a
-	mov R1, a
-	
-	mov a, R2
-	addc a, R2
-	da a
-	mov R2, a
-	
-	djnz R3, hex2bcd_loop
-	ret
-
-; Dumps the 5-digit packed BCD number in R2-R1-R0 into the LCD
-DisplayBCD_LCD:
-	; 5th digit:
-    mov a, R2
-    anl a, #0FH
-    orl a, #'0' ; convert to ASCII
-	lcall ?WriteData
-	; 4th digit:
-    mov a, R1
-    swap a
-    anl a, #0FH
-    orl a, #'0' ; convert to ASCII
-	lcall ?WriteData
-	; 3rd digit:
-    mov a, R1
-    anl a, #0FH
-    orl a, #'0' ; convert to ASCII
-	lcall ?WriteData
-	; 2nd digit:
-    mov a, R0
-    swap a
-    anl a, #0FH
-    orl a, #'0' ; convert to ASCII
-	lcall ?WriteData
-	; 1st digit:
-    mov a, R0
-    anl a, #0FH
-    orl a, #'0' ; convert to ASCII
-	lcall ?WriteData
-    
-    ret
-	
 	END
     
     
